@@ -7,8 +7,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Position Size Calculator',
-  description: 'Calculate your optimal trading position size and manage risk effectively',
+  title: 'Trading Dashboard',
+  description: 'Position size calculator and P&L calendar for traders',
   generator: 'v0.app',
   icons: {
     icon: [
