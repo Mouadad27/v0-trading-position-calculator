@@ -40,26 +40,44 @@ export function PositionCalculator() {
     // Calculations
     const maxRisk = balance * (riskPercent / 100)
     const slSize = entry * 0.02 // 2% of entry price
-    const shares = slSize > 0 ? Math.floor(maxRisk / slSize) : 0
+    
+    // Calculate shares based on risk
+    const sharesFromRisk = slSize > 0 ? Math.floor(maxRisk / slSize) : 0
+    
+    // Calculate maximum affordable shares (no leverage)
+    const maxAffordableShares = entry > 0 ? Math.floor(balance / entry) : 0
+    
+    // Use the LOWER number to prevent leverage
+    const shares = Math.min(sharesFromRisk, maxAffordableShares)
+    const wasReducedForBalance = sharesFromRisk > maxAffordableShares
+    
     const stopLoss = entry * 0.98 // 2% below entry
     const takeProfit = entry + (entry - stopLoss) * rrMultiplier
     const totalPositionValue = entry * shares
-    const positionPercent = balance > 0 ? (totalPositionValue / balance) * 100 : 0
+    const buyingPowerUsed = balance > 0 ? (totalPositionValue / balance) * 100 : 0
     
     // Outcomes
     const profitIfTP = (takeProfit - entry) * shares
     const lossIfSL = (entry - stopLoss) * shares
+    
+    // Actual risk percentage after position size adjustment
+    const actualRiskAmount = lossIfSL
+    const actualRiskPercent = balance > 0 ? (actualRiskAmount / balance) * 100 : 0
 
     return {
       maxRisk,
       slSize,
       shares,
+      sharesFromRisk,
+      maxAffordableShares,
+      wasReducedForBalance,
       stopLoss,
       takeProfit,
       totalPositionValue,
-      positionPercent,
+      buyingPowerUsed,
       profitIfTP,
       lossIfSL,
+      actualRiskPercent,
       rrMultiplier,
       entry,
     }
@@ -187,6 +205,18 @@ export function PositionCalculator() {
         </CardContent>
       </Card>
 
+      {/* Position Reduced Warning (No Leverage) */}
+      {calculations.wasReducedForBalance && (
+        <Alert className="border-primary/50 bg-primary/10">
+          <AlertTriangle className="h-4 w-4 text-primary" />
+          <AlertDescription className="text-primary">
+            Position size reduced to fit your account balance (no leverage). 
+            Risk-based calculation suggested {calculations.sharesFromRisk.toLocaleString()} shares, 
+            but you can only afford {calculations.maxAffordableShares.toLocaleString()} shares with {formatCurrency(parseNumber(accountBalance))}.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Penny Stock Warning */}
       {isPennyStock && (
         <Alert className="border-warning/50 bg-warning/10">
@@ -304,7 +334,39 @@ export function PositionCalculator() {
               <div>
                 <div className="text-sm text-muted-foreground">Total position value</div>
                 <div className="font-semibold text-foreground">
-                  {formatCurrency(calculations.totalPositionValue)} ({calculations.positionPercent.toFixed(1)}% of account)
+                  {formatCurrency(calculations.totalPositionValue)}
+                </div>
+              </div>
+            </div>
+
+            <div className={cn(
+              "flex items-center gap-3 p-3 rounded-lg border",
+              calculations.buyingPowerUsed > 100 
+                ? "bg-destructive/10 border-destructive/20" 
+                : "bg-muted border-border"
+            )}>
+              <DollarSign className={cn(
+                "h-5 w-5",
+                calculations.buyingPowerUsed > 100 ? "text-destructive" : "text-muted-foreground"
+              )} />
+              <div>
+                <div className="text-sm text-muted-foreground">Buying power used</div>
+                <div className={cn(
+                  "font-semibold",
+                  calculations.buyingPowerUsed > 100 ? "text-destructive" : "text-foreground"
+                )}>
+                  {calculations.buyingPowerUsed.toFixed(1)}% of account
+                  {calculations.buyingPowerUsed > 100 && " (exceeds balance!)"}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted border border-border">
+              <Shield className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <div className="text-sm text-muted-foreground">Actual risk</div>
+                <div className="font-semibold text-foreground">
+                  {calculations.actualRiskPercent.toFixed(2)}% ({formatCurrency(calculations.lossIfSL)})
                 </div>
               </div>
             </div>
