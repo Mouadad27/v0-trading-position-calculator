@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar } from "lucide-react"
+import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar, BarChart3, Award, Target } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface DayData {
@@ -109,6 +109,58 @@ export function PnLCalendar() {
     return { total, profitDays, lossDays, tradingDays }
   })()
 
+  // Calculate yearly totals
+  const yearlyStats = (() => {
+    let total = 0
+    let profitDays = 0
+    let lossDays = 0
+    let tradingDays = 0
+    let bestMonth = { name: "", value: -Infinity }
+    let worstMonth = { name: "", value: Infinity }
+    const monthlyTotals: { [key: number]: number } = {}
+
+    // Iterate through all calendar data entries for the current year
+    Object.entries(calendarData).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        const [entryYear, entryMonth] = key.split("-").map(Number)
+        if (entryYear === year) {
+          total += value
+          tradingDays++
+          if (value > 0) profitDays++
+          if (value < 0) lossDays++
+          
+          // Track monthly totals for best/worst month
+          if (!monthlyTotals[entryMonth]) {
+            monthlyTotals[entryMonth] = 0
+          }
+          monthlyTotals[entryMonth] += value
+        }
+      }
+    })
+
+    // Determine best and worst months
+    const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    Object.entries(monthlyTotals).forEach(([monthNum, monthTotal]) => {
+      const monthName = monthNames[Number(monthNum)]
+      if (monthTotal > bestMonth.value) {
+        bestMonth = { name: monthName, value: monthTotal }
+      }
+      if (monthTotal < worstMonth.value) {
+        worstMonth = { name: monthName, value: monthTotal }
+      }
+    })
+
+    return { 
+      total, 
+      profitDays, 
+      lossDays, 
+      tradingDays,
+      bestMonth: bestMonth.value !== -Infinity ? bestMonth : null,
+      worstMonth: worstMonth.value !== Infinity ? worstMonth : null,
+      winRate: tradingDays > 0 ? (profitDays / tradingDays) * 100 : 0
+    }
+  })()
+
   const formatCurrency = (value: number) => {
     const formatted = new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -184,6 +236,116 @@ export function PnLCalendar() {
             Track your daily trading performance
           </p>
         </div>
+
+        {/* Yearly Summary */}
+        <Card className="border-border bg-card">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg text-card-foreground flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              {year} Year Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Yearly Total */}
+              <div className={cn(
+                "rounded-lg p-4 border",
+                yearlyStats.total >= 0 
+                  ? "border-success/30 bg-success/5" 
+                  : "border-destructive/30 bg-destructive/5"
+              )}>
+                <div className="flex items-center gap-2 mb-1">
+                  {yearlyStats.total >= 0 ? (
+                    <TrendingUp className="h-4 w-4 text-success" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 text-destructive" />
+                  )}
+                  <span className="text-sm text-muted-foreground">Year Total</span>
+                </div>
+                <p className={cn(
+                  "text-2xl font-bold",
+                  yearlyStats.total >= 0 ? "text-success" : "text-destructive"
+                )}>
+                  {formatCurrency(yearlyStats.total)}
+                </p>
+              </div>
+
+              {/* Win Rate */}
+              <div className="rounded-lg p-4 border border-border bg-muted/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <Target className="h-4 w-4 text-primary" />
+                  <span className="text-sm text-muted-foreground">Win Rate</span>
+                </div>
+                <p className="text-2xl font-bold text-foreground">
+                  {yearlyStats.winRate.toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {yearlyStats.profitDays}W / {yearlyStats.lossDays}L
+                </p>
+              </div>
+
+              {/* Best Month */}
+              <div className="rounded-lg p-4 border border-success/30 bg-success/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Award className="h-4 w-4 text-success" />
+                  <span className="text-sm text-muted-foreground">Best Month</span>
+                </div>
+                {yearlyStats.bestMonth ? (
+                  <>
+                    <p className="text-2xl font-bold text-success">
+                      {formatCurrency(yearlyStats.bestMonth.value)}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {yearlyStats.bestMonth.name}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-lg text-muted-foreground">No data</p>
+                )}
+              </div>
+
+              {/* Worst Month */}
+              <div className="rounded-lg p-4 border border-destructive/30 bg-destructive/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingDown className="h-4 w-4 text-destructive" />
+                  <span className="text-sm text-muted-foreground">Worst Month</span>
+                </div>
+                {yearlyStats.worstMonth ? (
+                  <>
+                    <p className="text-2xl font-bold text-destructive">
+                      {formatCurrency(yearlyStats.worstMonth.value)}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {yearlyStats.worstMonth.name}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-lg text-muted-foreground">No data</p>
+                )}
+              </div>
+            </div>
+
+            {/* Trading Days Summary */}
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Total Trading Days in {year}</span>
+                <span className="font-semibold text-foreground">{yearlyStats.tradingDays} days</span>
+              </div>
+              {yearlyStats.tradingDays > 0 && (
+                <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden flex">
+                  <div 
+                    className="h-full bg-success transition-all duration-300"
+                    style={{ width: `${(yearlyStats.profitDays / yearlyStats.tradingDays) * 100}%` }}
+                  />
+                  <div 
+                    className="h-full bg-destructive transition-all duration-300"
+                    style={{ width: `${(yearlyStats.lossDays / yearlyStats.tradingDays) * 100}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Monthly Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
