@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar, BarChart3, Award, Target, Download, FileSpreadsheet, StickyNote, Hash } from "lucide-react"
+import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar, BarChart3, Award, Target, Download, FileSpreadsheet, StickyNote, Hash, PieChart } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Textarea } from "@/components/ui/textarea"
+import { YearSummary } from "./year-summary"
 
 interface DayEntry {
   pnl: number
@@ -28,6 +29,7 @@ export function PnLCalendar() {
   const [tradesValue, setTradesValue] = useState("")
   const [noteValue, setNoteValue] = useState("")
   const [exportPeriod, setExportPeriod] = useState<"month" | "year">("month")
+  const [showYearSummary, setShowYearSummary] = useState(false)
 
   // Load data from localStorage (with migration for old format)
   useEffect(() => {
@@ -399,6 +401,17 @@ export function PnLCalendar() {
     )
   }
 
+  // Show Year Summary view
+  if (showYearSummary) {
+    return (
+      <YearSummary 
+        year={year} 
+        calendarData={calendarData} 
+        onBack={() => setShowYearSummary(false)} 
+      />
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
@@ -410,6 +423,15 @@ export function PnLCalendar() {
           <p className="text-muted-foreground">
             Track your daily trading performance
           </p>
+          
+          {/* Year Summary Button */}
+          <Button
+            onClick={() => setShowYearSummary(true)}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2"
+          >
+            <PieChart className="h-4 w-4 mr-2" />
+            {year} Year Summary
+          </Button>
           
           {/* Export Controls */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
