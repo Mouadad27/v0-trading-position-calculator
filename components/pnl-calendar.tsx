@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar, BarChart3, Award, Target } from "lucide-react"
+import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar, BarChart3, Award, Target, Download, FileSpreadsheet } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface DayData {
@@ -171,6 +171,103 @@ export function PnLCalendar() {
     return value >= 0 ? `+${formatted}` : `-${formatted}`
   }
 
+  // Export to CSV
+  const exportToCSV = () => {
+    const entries = Object.entries(calendarData)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+
+    if (entries.length === 0) {
+      alert("No data to export")
+      return
+    }
+
+    const headers = ["Date", "P&L ($)", "Type"]
+    const rows = entries.map(([date, value]) => [
+      date,
+      value!.toFixed(2),
+      value! >= 0 ? "Profit" : "Loss"
+    ])
+
+    // Add summary rows
+    rows.push([])
+    rows.push(["--- Summary ---", "", ""])
+    rows.push(["Total P&L", yearlyStats.total.toFixed(2), yearlyStats.total >= 0 ? "Profit" : "Loss"])
+    rows.push(["Trading Days", yearlyStats.tradingDays.toString(), ""])
+    rows.push(["Profit Days", yearlyStats.profitDays.toString(), ""])
+    rows.push(["Loss Days", yearlyStats.lossDays.toString(), ""])
+    rows.push(["Win Rate", `${yearlyStats.winRate.toFixed(1)}%`, ""])
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `trading-pnl-${year}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  // Export to Excel-compatible format (TSV)
+  const exportToExcel = () => {
+    const entries = Object.entries(calendarData)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+
+    if (entries.length === 0) {
+      alert("No data to export")
+      return
+    }
+
+    const headers = ["Date", "P&L ($)", "Type", "Running Total"]
+    let runningTotal = 0
+    const rows = entries.map(([date, value]) => {
+      runningTotal += value!
+      return [
+        date,
+        value!.toFixed(2),
+        value! >= 0 ? "Profit" : "Loss",
+        runningTotal.toFixed(2)
+      ]
+    })
+
+    // Add summary section
+    rows.push(["", "", "", ""])
+    rows.push(["Summary", "", "", ""])
+    rows.push(["Total P&L", yearlyStats.total.toFixed(2), "", ""])
+    rows.push(["Trading Days", yearlyStats.tradingDays.toString(), "", ""])
+    rows.push(["Profit Days", yearlyStats.profitDays.toString(), "", ""])
+    rows.push(["Loss Days", yearlyStats.lossDays.toString(), "", ""])
+    rows.push(["Win Rate", `${yearlyStats.winRate.toFixed(1)}%`, "", ""])
+    if (yearlyStats.bestMonth) {
+      rows.push(["Best Month", yearlyStats.bestMonth.name, yearlyStats.bestMonth.value.toFixed(2), ""])
+    }
+    if (yearlyStats.worstMonth) {
+      rows.push(["Worst Month", yearlyStats.worstMonth.name, yearlyStats.worstMonth.value.toFixed(2), ""])
+    }
+
+    const tsvContent = [
+      headers.join("\t"),
+      ...rows.map(row => row.join("\t"))
+    ].join("\n")
+
+    const blob = new Blob([tsvContent], { type: "application/vnd.ms-excel" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `trading-pnl-${year}.xls`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
   // Generate calendar grid
@@ -235,6 +332,28 @@ export function PnLCalendar() {
           <p className="text-muted-foreground">
             Track your daily trading performance
           </p>
+          
+          {/* Export Buttons */}
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportToCSV}
+              className="border-border text-foreground hover:bg-muted"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportToExcel}
+              className="border-border text-foreground hover:bg-muted"
+            >
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Export to Excel
+            </Button>
+          </div>
         </div>
 
         {/* Yearly Summary */}
