@@ -4,11 +4,18 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar, BarChart3, Award, Target, Download, FileSpreadsheet } from "lucide-react"
+import { ChevronLeft, ChevronRight, X, TrendingUp, TrendingDown, Calendar, BarChart3, Award, Target, Download, FileSpreadsheet, StickyNote, Hash } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Textarea } from "@/components/ui/textarea"
+
+interface DayEntry {
+  pnl: number
+  trades?: number
+  note?: string
+}
 
 interface DayData {
-  [key: string]: number | null
+  [key: string]: DayEntry | null
 }
 
 const STORAGE_KEY = "trading-pnl-calendar"
@@ -18,13 +25,26 @@ export function PnLCalendar() {
   const [calendarData, setCalendarData] = useState<DayData>({})
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState("")
+  const [tradesValue, setTradesValue] = useState("")
+  const [noteValue, setNoteValue] = useState("")
+  const [exportPeriod, setExportPeriod] = useState<"month" | "year">("month")
 
-  // Load data from localStorage
+  // Load data from localStorage (with migration for old format)
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       try {
-        setCalendarData(JSON.parse(saved))
+        const parsed = JSON.parse(saved)
+        // Migrate old format (number) to new format (DayEntry)
+        const migrated: DayData = {}
+        Object.entries(parsed).forEach(([key, value]) => {
+          if (typeof value === "number") {
+            migrated[key] = { pnl: value }
+          } else {
+            migrated[key] = value as DayEntry | null
+          }
+        })
+        setCalendarData(migrated)
       } catch {
         setCalendarData({})
       }
@@ -58,25 +78,34 @@ export function PnLCalendar() {
   const handleDayClick = (day: number) => {
     const key = getDayKey(day)
     setSelectedDay(key)
-    const existingValue = calendarData[key]
-    setInputValue(existingValue !== null && existingValue !== undefined ? String(existingValue) : "")
+    const existingEntry = calendarData[key]
+    setInputValue(existingEntry?.pnl !== null && existingEntry?.pnl !== undefined ? String(existingEntry.pnl) : "")
+    setTradesValue(existingEntry?.trades !== null && existingEntry?.trades !== undefined ? String(existingEntry.trades) : "")
+    setNoteValue(existingEntry?.note || "")
   }
 
   const handleSave = () => {
     if (selectedDay === null) return
     // Replace commas with dots for international number format support
     const normalizedValue = inputValue.replace(",", ".")
-    const value = parseFloat(normalizedValue)
+    const pnlValue = parseFloat(normalizedValue)
+    const tradesNum = tradesValue ? parseInt(tradesValue, 10) : undefined
     
     const newData = { ...calendarData }
-    if (isNaN(value) || inputValue.trim() === "") {
+    if (isNaN(pnlValue) || inputValue.trim() === "") {
       delete newData[selectedDay]
     } else {
-      newData[selectedDay] = value
+      newData[selectedDay] = {
+        pnl: pnlValue,
+        trades: tradesNum && !isNaN(tradesNum) ? tradesNum : undefined,
+        note: noteValue.trim() || undefined
+      }
     }
     saveData(newData)
     setSelectedDay(null)
     setInputValue("")
+    setTradesValue("")
+    setNoteValue("")
   }
 
   const handleClear = () => {
@@ -86,6 +115,8 @@ export function PnLCalendar() {
     saveData(newData)
     setSelectedDay(null)
     setInputValue("")
+    setTradesValue("")
+    setNoteValue("")
   }
 
   // Calculate monthly totals
@@ -94,19 +125,21 @@ export function PnLCalendar() {
     let profitDays = 0
     let lossDays = 0
     let tradingDays = 0
+    let totalTrades = 0
 
     for (let day = 1; day <= daysInMonth; day++) {
       const key = getDayKey(day)
-      const value = calendarData[key]
-      if (value !== null && value !== undefined) {
-        total += value
+      const entry = calendarData[key]
+      if (entry !== null && entry !== undefined) {
+        total += entry.pnl
         tradingDays++
-        if (value > 0) profitDays++
-        if (value < 0) lossDays++
+        if (entry.pnl > 0) profitDays++
+        if (entry.pnl < 0) lossDays++
+        if (entry.trades) totalTrades += entry.trades
       }
     }
 
-    return { total, profitDays, lossDays, tradingDays }
+    return { total, profitDays, lossDays, tradingDays, totalTrades }
   })()
 
   // Calculate yearly totals
@@ -115,25 +148,27 @@ export function PnLCalendar() {
     let profitDays = 0
     let lossDays = 0
     let tradingDays = 0
+    let totalTrades = 0
     let bestMonth = { name: "", value: -Infinity }
     let worstMonth = { name: "", value: Infinity }
     const monthlyTotals: { [key: number]: number } = {}
 
     // Iterate through all calendar data entries for the current year
-    Object.entries(calendarData).forEach(([key, value]) => {
-      if (value !== null && value !== undefined) {
+    Object.entries(calendarData).forEach(([key, entry]) => {
+      if (entry !== null && entry !== undefined) {
         const [entryYear, entryMonth] = key.split("-").map(Number)
         if (entryYear === year) {
-          total += value
+          total += entry.pnl
           tradingDays++
-          if (value > 0) profitDays++
-          if (value < 0) lossDays++
+          if (entry.pnl > 0) profitDays++
+          if (entry.pnl < 0) lossDays++
+          if (entry.trades) totalTrades += entry.trades
           
           // Track monthly totals for best/worst month
           if (!monthlyTotals[entryMonth]) {
             monthlyTotals[entryMonth] = 0
           }
-          monthlyTotals[entryMonth] += value
+          monthlyTotals[entryMonth] += entry.pnl
         }
       }
     })
@@ -155,6 +190,7 @@ export function PnLCalendar() {
       profitDays, 
       lossDays, 
       tradingDays,
+      totalTrades,
       bestMonth: bestMonth.value !== -Infinity ? bestMonth : null,
       worstMonth: worstMonth.value !== Infinity ? worstMonth : null,
       winRate: tradingDays > 0 ? (profitDays / tradingDays) * 100 : 0
@@ -173,30 +209,47 @@ export function PnLCalendar() {
 
   // Export to CSV
   const exportToCSV = () => {
+    const monthStr = String(month + 1).padStart(2, "0")
+    const filterPrefix = exportPeriod === "month" ? `${year}-${monthStr}` : `${year}`
+    
     const entries = Object.entries(calendarData)
-      .filter(([, value]) => value !== null && value !== undefined)
+      .filter(([key, entry]) => entry !== null && entry !== undefined && key.startsWith(filterPrefix))
       .sort(([a], [b]) => a.localeCompare(b))
 
     if (entries.length === 0) {
-      alert("No data to export")
+      alert("No data to export for selected period")
       return
     }
 
-    const headers = ["Date", "P&L ($)", "Type"]
-    const rows = entries.map(([date, value]) => [
+    const headers = ["Date", "P&L ($)", "Type", "Trades", "Note"]
+    const rows = entries.map(([date, entry]) => [
       date,
-      value!.toFixed(2),
-      value! >= 0 ? "Profit" : "Loss"
+      entry!.pnl.toFixed(2),
+      entry!.pnl >= 0 ? "Profit" : "Loss",
+      entry!.trades?.toString() || "",
+      `"${(entry!.note || "").replace(/"/g, '""')}"`
     ])
 
+    // Calculate stats for selected period
+    const stats = entries.reduce((acc, [, entry]) => {
+      acc.total += entry!.pnl
+      acc.tradingDays++
+      acc.totalTrades += entry!.trades || 0
+      if (entry!.pnl > 0) acc.profitDays++
+      if (entry!.pnl < 0) acc.lossDays++
+      return acc
+    }, { total: 0, tradingDays: 0, profitDays: 0, lossDays: 0, totalTrades: 0 })
+
     // Add summary rows
-    rows.push([])
-    rows.push(["--- Summary ---", "", ""])
-    rows.push(["Total P&L", yearlyStats.total.toFixed(2), yearlyStats.total >= 0 ? "Profit" : "Loss"])
-    rows.push(["Trading Days", yearlyStats.tradingDays.toString(), ""])
-    rows.push(["Profit Days", yearlyStats.profitDays.toString(), ""])
-    rows.push(["Loss Days", yearlyStats.lossDays.toString(), ""])
-    rows.push(["Win Rate", `${yearlyStats.winRate.toFixed(1)}%`, ""])
+    rows.push(["", "", "", "", ""])
+    rows.push(["--- Summary ---", "", "", "", ""])
+    rows.push(["Period", exportPeriod === "month" ? `${monthName} ${year}` : `${year}`, "", "", ""])
+    rows.push(["Total P&L", stats.total.toFixed(2), stats.total >= 0 ? "Profit" : "Loss", "", ""])
+    rows.push(["Trading Days", stats.tradingDays.toString(), "", "", ""])
+    rows.push(["Total Trades", stats.totalTrades.toString(), "", "", ""])
+    rows.push(["Profit Days", stats.profitDays.toString(), "", "", ""])
+    rows.push(["Loss Days", stats.lossDays.toString(), "", "", ""])
+    rows.push(["Win Rate", `${stats.tradingDays > 0 ? ((stats.profitDays / stats.tradingDays) * 100).toFixed(1) : 0}%`, "", "", ""])
 
     const csvContent = [
       headers.join(","),
@@ -207,7 +260,7 @@ export function PnLCalendar() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `trading-pnl-${year}.csv`
+    link.download = exportPeriod === "month" ? `trading-pnl-${year}-${monthStr}.csv` : `trading-pnl-${year}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -216,41 +269,52 @@ export function PnLCalendar() {
 
   // Export to Excel-compatible format (TSV)
   const exportToExcel = () => {
+    const monthStr = String(month + 1).padStart(2, "0")
+    const filterPrefix = exportPeriod === "month" ? `${year}-${monthStr}` : `${year}`
+    
     const entries = Object.entries(calendarData)
-      .filter(([, value]) => value !== null && value !== undefined)
+      .filter(([key, entry]) => entry !== null && entry !== undefined && key.startsWith(filterPrefix))
       .sort(([a], [b]) => a.localeCompare(b))
 
     if (entries.length === 0) {
-      alert("No data to export")
+      alert("No data to export for selected period")
       return
     }
 
-    const headers = ["Date", "P&L ($)", "Type", "Running Total"]
+    const headers = ["Date", "P&L ($)", "Type", "Running Total", "Trades", "Note"]
     let runningTotal = 0
-    const rows = entries.map(([date, value]) => {
-      runningTotal += value!
+    const rows = entries.map(([date, entry]) => {
+      runningTotal += entry!.pnl
       return [
         date,
-        value!.toFixed(2),
-        value! >= 0 ? "Profit" : "Loss",
-        runningTotal.toFixed(2)
+        entry!.pnl.toFixed(2),
+        entry!.pnl >= 0 ? "Profit" : "Loss",
+        runningTotal.toFixed(2),
+        entry!.trades?.toString() || "",
+        entry!.note || ""
       ]
     })
 
+    // Calculate stats for selected period
+    const stats = entries.reduce((acc, [, entry]) => {
+      acc.total += entry!.pnl
+      acc.tradingDays++
+      acc.totalTrades += entry!.trades || 0
+      if (entry!.pnl > 0) acc.profitDays++
+      if (entry!.pnl < 0) acc.lossDays++
+      return acc
+    }, { total: 0, tradingDays: 0, profitDays: 0, lossDays: 0, totalTrades: 0 })
+
     // Add summary section
-    rows.push(["", "", "", ""])
-    rows.push(["Summary", "", "", ""])
-    rows.push(["Total P&L", yearlyStats.total.toFixed(2), "", ""])
-    rows.push(["Trading Days", yearlyStats.tradingDays.toString(), "", ""])
-    rows.push(["Profit Days", yearlyStats.profitDays.toString(), "", ""])
-    rows.push(["Loss Days", yearlyStats.lossDays.toString(), "", ""])
-    rows.push(["Win Rate", `${yearlyStats.winRate.toFixed(1)}%`, "", ""])
-    if (yearlyStats.bestMonth) {
-      rows.push(["Best Month", yearlyStats.bestMonth.name, yearlyStats.bestMonth.value.toFixed(2), ""])
-    }
-    if (yearlyStats.worstMonth) {
-      rows.push(["Worst Month", yearlyStats.worstMonth.name, yearlyStats.worstMonth.value.toFixed(2), ""])
-    }
+    rows.push(["", "", "", "", "", ""])
+    rows.push(["Summary", "", "", "", "", ""])
+    rows.push(["Period", exportPeriod === "month" ? `${monthName} ${year}` : `${year}`, "", "", "", ""])
+    rows.push(["Total P&L", stats.total.toFixed(2), "", "", "", ""])
+    rows.push(["Trading Days", stats.tradingDays.toString(), "", "", "", ""])
+    rows.push(["Total Trades", stats.totalTrades.toString(), "", "", "", ""])
+    rows.push(["Profit Days", stats.profitDays.toString(), "", "", "", ""])
+    rows.push(["Loss Days", stats.lossDays.toString(), "", "", "", ""])
+    rows.push(["Win Rate", `${stats.tradingDays > 0 ? ((stats.profitDays / stats.tradingDays) * 100).toFixed(1) : 0}%`, "", "", "", ""])
 
     const tsvContent = [
       headers.join("\t"),
@@ -261,7 +325,7 @@ export function PnLCalendar() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `trading-pnl-${year}.xls`
+    link.download = exportPeriod === "month" ? `trading-pnl-${year}-${monthStr}.xls` : `trading-pnl-${year}.xls`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -281,10 +345,10 @@ export function PnLCalendar() {
   // Days of the month
   for (let day = 1; day <= daysInMonth; day++) {
     const key = getDayKey(day)
-    const value = calendarData[key]
-    const hasValue = value !== null && value !== undefined
-    const isProfit = hasValue && value > 0
-    const isLoss = hasValue && value < 0
+    const entry = calendarData[key]
+    const hasValue = entry !== null && entry !== undefined
+    const isProfit = hasValue && entry.pnl > 0
+    const isLoss = hasValue && entry.pnl < 0
     const isToday = new Date().toDateString() === new Date(year, month, day).toDateString()
 
     calendarDays.push(
@@ -292,7 +356,7 @@ export function PnLCalendar() {
         key={day}
         onClick={() => handleDayClick(day)}
         className={cn(
-          "aspect-square rounded-lg p-1 flex flex-col items-center justify-center text-sm transition-all duration-200 border",
+          "aspect-square rounded-lg p-1 flex flex-col items-center justify-center text-sm transition-all duration-200 border relative",
           hasValue
             ? isProfit
               ? "bg-success/20 border-success/30 hover:bg-success/30"
@@ -310,12 +374,26 @@ export function PnLCalendar() {
           {day}
         </span>
         {hasValue && (
-          <span className={cn(
-            "text-xs font-semibold truncate w-full text-center",
-            isProfit ? "text-success" : isLoss ? "text-destructive" : "text-foreground"
-          )}>
-            {value >= 0 ? "+" : ""}{value.toFixed(0)}
-          </span>
+          <>
+            <span className={cn(
+              "text-xs font-semibold truncate w-full text-center",
+              isProfit ? "text-success" : isLoss ? "text-destructive" : "text-foreground"
+            )}>
+              {entry.pnl >= 0 ? "+" : ""}{entry.pnl.toFixed(0)}
+            </span>
+            {(entry.trades || entry.note) && (
+              <div className="absolute bottom-0.5 right-0.5 flex gap-0.5">
+                {entry.trades && (
+                  <span className="text-[8px] bg-primary/20 text-primary px-1 rounded">
+                    {entry.trades}t
+                  </span>
+                )}
+                {entry.note && (
+                  <StickyNote className="h-2.5 w-2.5 text-muted-foreground" />
+                )}
+              </div>
+            )}
+          </>
         )}
       </button>
     )
@@ -333,26 +411,49 @@ export function PnLCalendar() {
             Track your daily trading performance
           </p>
           
-          {/* Export Buttons */}
-          <div className="flex items-center justify-center gap-3 pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportToCSV}
-              className="border-border text-foreground hover:bg-muted"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download CSV
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportToExcel}
-              className="border-border text-foreground hover:bg-muted"
-            >
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export to Excel
-            </Button>
+          {/* Export Controls */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            {/* Period Selection */}
+            <div className="flex items-center gap-2 p-1 bg-muted rounded-lg">
+              <Button
+                variant={exportPeriod === "month" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setExportPeriod("month")}
+                className={exportPeriod === "month" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}
+              >
+                {monthName}
+              </Button>
+              <Button
+                variant={exportPeriod === "year" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setExportPeriod("year")}
+                className={exportPeriod === "year" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}
+              >
+                {year}
+              </Button>
+            </div>
+            
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToCSV}
+                className="border-border text-foreground hover:bg-muted"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToExcel}
+                className="border-border text-foreground hover:bg-muted"
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Excel
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -582,7 +683,7 @@ export function PnLCalendar() {
         {/* Entry Modal */}
         {selectedDay && (
           <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <Card className="w-full max-w-sm border-border bg-card">
+            <Card className="w-full max-w-md border-border bg-card">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg text-card-foreground">
@@ -594,6 +695,8 @@ export function PnLCalendar() {
                     onClick={() => {
                       setSelectedDay(null)
                       setInputValue("")
+                      setTradesValue("")
+                      setNoteValue("")
                     }}
                     className="text-muted-foreground hover:text-foreground"
                   >
@@ -602,8 +705,10 @@ export function PnLCalendar() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* P&L Input */}
                 <div className="space-y-2">
-                  <label className="text-sm text-muted-foreground">
+                  <label className="text-sm text-muted-foreground flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
                     Profit/Loss Amount (use negative for loss)
                   </label>
                   <div className="relative">
@@ -619,6 +724,8 @@ export function PnLCalendar() {
                         if (e.key === "Escape") {
                           setSelectedDay(null)
                           setInputValue("")
+                          setTradesValue("")
+                          setNoteValue("")
                         }
                       }}
                       className="pl-7 bg-input border-border text-foreground"
@@ -630,6 +737,37 @@ export function PnLCalendar() {
                     Tip: You can use comma or dot as decimal separator
                   </p>
                 </div>
+
+                {/* Trades Count */}
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Hash className="h-4 w-4" />
+                    Number of Trades
+                  </label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={tradesValue}
+                    onChange={(e) => setTradesValue(e.target.value)}
+                    className="bg-input border-border text-foreground"
+                    placeholder="e.g., 5"
+                  />
+                </div>
+
+                {/* Note */}
+                <div className="space-y-2">
+                  <label className="text-sm text-muted-foreground flex items-center gap-2">
+                    <StickyNote className="h-4 w-4" />
+                    Note (optional)
+                  </label>
+                  <Textarea
+                    value={noteValue}
+                    onChange={(e) => setNoteValue(e.target.value)}
+                    className="bg-input border-border text-foreground min-h-[80px] resize-none"
+                    placeholder="Market conditions, lessons learned..."
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     onClick={handleSave}
